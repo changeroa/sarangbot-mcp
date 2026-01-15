@@ -134,7 +134,6 @@ function createMcpServer(): McpServer {
 
 // Express app setup
 const app = express();
-app.use(express.json());
 
 // Health check endpoint
 app.get("/health", (_req: Request, res: Response) => {
