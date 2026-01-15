@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/couple_mcp";
+const MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/sarang_bot";
 
 export async function connectDB(): Promise<void> {
   try {

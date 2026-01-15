@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: couple-mcp
+    name: sarang-bot
     runtime: node
     buildCommand: npm install && npm run build
     startCommand: node dist/index.js
