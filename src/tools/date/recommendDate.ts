@@ -1,4 +1,4 @@
-import { coupleRepository, dateLogRepository } from "../../db/repositories/index.js";
+import { coupleRepository } from "../../db/repositories/index.js";
 import { searchDateSpots, KakaoApiError, getDirectionsUrl } from "../../services/kakaoMap.js";
 import { logger } from "../../utils/logger.js";
 import type { ToolResponse } from "../../types/index.js";
@@ -49,9 +49,6 @@ export async function recommendDate({
       };
     }
 
-    // Get visited places to potentially exclude
-    const visitedPlaces = await dateLogRepository.getVisitedPlaces(couple_id);
-
     // Search for places using real Kakao Map API
     const places = await searchDateSpots(location, category, 5);
 
@@ -74,27 +71,12 @@ export async function recommendDate({
       };
     }
 
-    // Mark visited places
-    const recommendations = places.map((place, index) => {
-      const isVisited = visitedPlaces.some(v =>
-        v.toLowerCase().includes(place.name.toLowerCase()) ||
-        place.name.toLowerCase().includes(v.toLowerCase())
-      );
-
-      return {
-        ...place,
-        isVisited,
-        index: index + 1
-      };
-    });
-
     // Build place cards with real data
-    const placeCards = recommendations.map(place => {
-      const visitedBadge = place.isVisited ? " 🔄 *(방문함)*" : " ✨ *(새로운 곳!)*";
+    const placeCards = places.map((place, index) => {
       const priceDesc = getPriceDescription(budget);
       const directionsUrl = getDirectionsUrl(place.name, place.y, place.x);
 
-      return `### ${place.index}. ${place.name}${visitedBadge}
+      return `### ${index + 1}. ${place.name}
 - **카테고리**: ${place.category}
 - **주소**: ${place.road_address || place.address}
 - **가격대**: ${priceDesc}
@@ -128,7 +110,6 @@ ${placeCards}
 ---
 
 ### 💡 Tips
-- 새로운 곳을 가보는 건 어때요? 🌟
 - 마음에 드는 곳이 있다면 \`log_date\`로 기록해두세요!
 - 다른 지역도 검색해보세요 (예: 홍대, 이태원, 성수)`;
 
