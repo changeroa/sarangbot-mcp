@@ -1,50 +1,104 @@
 import axios from "axios";
+import { logger } from "../utils/logger.js";
 import type { Place } from "../types/index.js";
 
 const KAKAO_API_KEY = process.env.KAKAO_REST_API_KEY;
 const BASE_URL = "https://dapi.kakao.com/v2/local/search/keyword.json";
 
-// Category codes for Kakao Map
+// Category codes for Kakao Map API
 export const CATEGORY_CODES = {
-  RESTAURANT: "FD6",
-  CAFE: "CE7",
-  CULTURE: "CT1",
-  TOUR: "AT4",
-  ACCOMMODATION: "AD5"
+  RESTAURANT: "FD6",    // 음식점
+  CAFE: "CE7",          // 카페
+  CULTURE: "CT1",       // 문화시설
+  TOUR: "AT4",          // 관광명소
+  ACCOMMODATION: "AD5", // 숙박
+  ENTERTAINMENT: "CE7", // 놀거리
 } as const;
 
 interface SearchParams {
   query: string;
   category_group_code?: string;
-  x?: string;
-  y?: string;
-  radius?: number;
-  size?: number;
+  x?: string;  // 경도 (longitude)
+  y?: string;  // 위도 (latitude)
+  radius?: number;  // 검색 반경 (미터)
+  size?: number;    // 결과 개수
+  page?: number;    // 페이지 번호
+  sort?: "accuracy" | "distance";  // 정렬 기준
 }
 
-interface KakaoPlaceResponse {
+interface KakaoPlaceDocument {
   id: string;
   place_name: string;
   category_name: string;
+  category_group_code: string;
+  category_group_name: string;
   address_name: string;
   road_address_name: string;
   phone: string;
   place_url: string;
   x: string;
   y: string;
+  distance?: string;
+}
+
+interface KakaoSearchResponse {
+  meta: {
+    total_count: number;
+    pageable_count: number;
+    is_end: boolean;
+    same_name: {
+      region: string[];
+      keyword: string;
+      selected_region: string;
+    };
+  };
+  documents: KakaoPlaceDocument[];
+}
+
+/**
+ * Custom error for Kakao API failures
+ */
+export class KakaoApiError extends Error {
+  constructor(
+    message: string,
+    public statusCode?: number,
+    public isApiKeyMissing: boolean = false
+  ) {
+    super(message);
+    this.name = "KakaoApiError";
+  }
+}
+
+/**
+ * Validate that API key is configured
+ */
+function validateApiKey(): void {
+  if (!KAKAO_API_KEY) {
+    throw new KakaoApiError(
+      "KAKAO_REST_API_KEY is not configured. Please add it to your .env file.",
+      undefined,
+      true
+    );
+  }
 }
 
 /**
  * Search places using Kakao Map API
+ * @throws KakaoApiError if API call fails or key is missing
  */
 export async function searchPlaces(params: SearchParams): Promise<Place[]> {
-  if (!KAKAO_API_KEY) {
-    console.warn("KAKAO_REST_API_KEY is not set. Using mock data.");
-    return getMockPlaces(params.query);
-  }
+  validateApiKey();
+
+  const startTime = performance.now();
 
   try {
-    const response = await axios.get(BASE_URL, {
+    logger.info({
+      query: params.query,
+      category: params.category_group_code,
+      size: params.size
+    }, "Kakao Map API request");
+
+    const response = await axios.get<KakaoSearchResponse>(BASE_URL, {
       headers: {
         Authorization: `KakaoAK ${KAKAO_API_KEY}`
       },
@@ -54,11 +108,15 @@ export async function searchPlaces(params: SearchParams): Promise<Place[]> {
         x: params.x,
         y: params.y,
         radius: params.radius || 5000,
-        size: params.size || 5
-      }
+        size: params.size || 5,
+        page: params.page || 1,
+        sort: params.sort || "accuracy"
+      },
+      timeout: 10000  // 10초 타임아웃
     });
 
-    return response.data.documents.map((doc: KakaoPlaceResponse) => ({
+    const duration = performance.now() - startTime;
+    const places = response.data.documents.map((doc): Place => ({
       id: doc.id,
       name: doc.place_name,
       category: doc.category_name,
@@ -69,59 +127,62 @@ export async function searchPlaces(params: SearchParams): Promise<Place[]> {
       x: doc.x,
       y: doc.y
     }));
+
+    logger.info({
+      query: params.query,
+      totalCount: response.data.meta.total_count,
+      returnedCount: places.length,
+      duration: `${duration.toFixed(2)}ms`
+    }, "Kakao Map API success");
+
+    return places;
+
   } catch (error) {
-    console.error("Kakao Map API Error:", error);
-    return getMockPlaces(params.query);
-  }
-}
+    const duration = performance.now() - startTime;
 
-/**
- * Get mock places for testing without API key
- */
-function getMockPlaces(query: string): Place[] {
-  const mockData: Place[] = [
-    {
-      id: "mock_1",
-      name: `${query} 맛집 1`,
-      category: "음식점 > 한식",
-      address: "서울 강남구 테헤란로 123",
-      road_address: "서울 강남구 테헤란로 123",
-      phone: "02-1234-5678",
-      url: "https://map.kakao.com/",
-      x: "127.027610",
-      y: "37.497942"
-    },
-    {
-      id: "mock_2",
-      name: `${query} 맛집 2`,
-      category: "음식점 > 양식",
-      address: "서울 강남구 테헤란로 456",
-      road_address: "서울 강남구 테헤란로 456",
-      phone: "02-2345-6789",
-      url: "https://map.kakao.com/",
-      x: "127.028610",
-      y: "37.498942"
-    },
-    {
-      id: "mock_3",
-      name: `${query} 카페`,
-      category: "카페",
-      address: "서울 강남구 테헤란로 789",
-      road_address: "서울 강남구 테헤란로 789",
-      phone: "02-3456-7890",
-      url: "https://map.kakao.com/",
-      x: "127.029610",
-      y: "37.499942"
+    if (axios.isAxiosError(error)) {
+      const statusCode = error.response?.status;
+      const errorMessage = error.response?.data?.message || error.message;
+
+      logger.error({
+        query: params.query,
+        statusCode,
+        error: errorMessage,
+        duration: `${duration.toFixed(2)}ms`
+      }, "Kakao Map API error");
+
+      if (statusCode === 401) {
+        throw new KakaoApiError(
+          "Invalid Kakao API key. Please check your KAKAO_REST_API_KEY.",
+          statusCode
+        );
+      }
+
+      if (statusCode === 429) {
+        throw new KakaoApiError(
+          "Kakao API rate limit exceeded. Please try again later.",
+          statusCode
+        );
+      }
+
+      throw new KakaoApiError(
+        `Kakao API error: ${errorMessage}`,
+        statusCode
+      );
     }
-  ];
 
-  return mockData;
+    logger.error({ error, query: params.query }, "Unexpected error in Kakao Map API");
+    throw new KakaoApiError("Failed to connect to Kakao Map API");
+  }
 }
 
 /**
  * Search restaurants by location
  */
-export async function searchRestaurants(location: string, limit: number = 5): Promise<Place[]> {
+export async function searchRestaurants(
+  location: string,
+  limit: number = 5
+): Promise<Place[]> {
   return searchPlaces({
     query: `${location} 맛집`,
     category_group_code: CATEGORY_CODES.RESTAURANT,
@@ -132,7 +193,10 @@ export async function searchRestaurants(location: string, limit: number = 5): Pr
 /**
  * Search cafes by location
  */
-export async function searchCafes(location: string, limit: number = 5): Promise<Place[]> {
+export async function searchCafes(
+  location: string,
+  limit: number = 5
+): Promise<Place[]> {
   return searchPlaces({
     query: `${location} 카페`,
     category_group_code: CATEGORY_CODES.CAFE,
@@ -173,4 +237,42 @@ export async function searchDateSpots(
     category_group_code: categoryCode,
     size: limit
   });
+}
+
+/**
+ * Search places near coordinates
+ */
+export async function searchNearby(
+  x: string,  // 경도
+  y: string,  // 위도
+  keyword: string,
+  radius: number = 3000,
+  limit: number = 5
+): Promise<Place[]> {
+  return searchPlaces({
+    query: keyword,
+    x,
+    y,
+    radius,
+    size: limit,
+    sort: "distance"
+  });
+}
+
+/**
+ * Get place details URL for Kakao Map
+ */
+export function getPlaceMapUrl(placeId: string): string {
+  return `https://map.kakao.com/link/map/${placeId}`;
+}
+
+/**
+ * Get directions URL for Kakao Map
+ */
+export function getDirectionsUrl(
+  placeName: string,
+  lat: string,
+  lng: string
+): string {
+  return `https://map.kakao.com/link/to/${encodeURIComponent(placeName)},${lat},${lng}`;
 }
