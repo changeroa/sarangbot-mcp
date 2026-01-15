@@ -202,10 +202,26 @@ export async function keyTokenMiddleware(
 }
 
 /**
+ * No-op middleware that skips authentication
+ */
+function noAuthMiddleware(
+  _req: Request,
+  _res: Response,
+  next: NextFunction
+): void {
+  next();
+}
+
+/**
  * Get the appropriate auth middleware based on configuration
  */
 export function getAuthMiddleware() {
   const authType = process.env.AUTH_TYPE || "oauth";
+
+  if (authType === "none") {
+    logger.info("Authentication disabled (AUTH_TYPE=none)");
+    return noAuthMiddleware;
+  }
 
   if (authType === "key_token") {
     logger.info("Using Key/Token authentication");
