@@ -1,13 +1,17 @@
 import mongoose from "mongoose";
+import { config } from "../config/index.js";
+import { logger } from "../utils/logger.js";
 
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/sarang_bot";
+const MONGODB_URI = config.mongoUri || "mongodb://localhost:27017/sarang_bot";
 
 export async function connectDB(): Promise<void> {
   try {
-    await mongoose.connect(MONGODB_URI);
-    console.log("MongoDB connected successfully");
+    await mongoose.connect(MONGODB_URI, {
+      maxPoolSize: config.mongoMaxPoolSize,
+    });
+    logger.info({ uri: MONGODB_URI.replace(/\/\/[^:]+:[^@]+@/, "//***:***@") }, "MongoDB connected successfully");
   } catch (error) {
-    console.error("MongoDB connection error:", error);
+    logger.error({ error }, "MongoDB connection error");
     process.exit(1);
   }
 }
@@ -15,19 +19,19 @@ export async function connectDB(): Promise<void> {
 export async function disconnectDB(): Promise<void> {
   try {
     await mongoose.disconnect();
-    console.log("MongoDB disconnected");
+    logger.info("MongoDB disconnected");
   } catch (error) {
-    console.error("MongoDB disconnection error:", error);
+    logger.error({ error }, "MongoDB disconnection error");
   }
 }
 
 // Handle connection events
 mongoose.connection.on("error", (err) => {
-  console.error("MongoDB error:", err);
+  logger.error({ error: err }, "MongoDB error");
 });
 
 mongoose.connection.on("disconnected", () => {
-  console.log("MongoDB disconnected");
+  logger.info("MongoDB disconnected");
 });
 
 // Graceful shutdown

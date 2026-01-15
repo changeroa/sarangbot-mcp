@@ -6,8 +6,8 @@ const configSchema = z.object({
   nodeEnv: z.enum(["development", "test", "production"]).default("development"),
   port: z.coerce.number().default(3000),
 
-  // Database
-  mongoUri: z.string().url().optional(),
+  // Database - required in production, optional in development (uses localhost)
+  mongoUri: z.string().optional(),
   mongoMaxPoolSize: z.coerce.number().default(10),
 
   // External APIs
@@ -55,7 +55,21 @@ function loadConfig(): Config {
     process.exit(1);
   }
 
-  return result.data;
+  const config = result.data;
+
+  // Validate production requirements
+  if (config.nodeEnv === "production") {
+    if (!config.mongoUri) {
+      console.error("MONGODB_URI is required in production");
+      process.exit(1);
+    }
+    if (!config.kakaoApiKey) {
+      console.error("KAKAO_REST_API_KEY is required in production");
+      process.exit(1);
+    }
+  }
+
+  return config;
 }
 
 export const config = loadConfig();
