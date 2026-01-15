@@ -22,6 +22,11 @@ import {
   logDate,
   getDateHistory,
 } from "./tools/index.js";
+import {
+  promptSchemas,
+  promptDescriptions,
+  promptTemplates
+} from "./prompts/index.js";
 
 // Session store for MCP transports (only used in stateful mode)
 const sessions = new Map<string, {
@@ -156,6 +161,21 @@ function createMcpServer(): McpServer {
       category?: string;
     });
   });
+
+  // Register Prompts
+  server.prompt(
+    "couple_onboarding",
+    promptDescriptions.couple_onboarding,
+    promptSchemas.couple_onboarding,
+    async () => promptTemplates.couple_onboarding()
+  );
+
+  server.prompt(
+    "quick_start",
+    promptDescriptions.quick_start,
+    promptSchemas.quick_start,
+    async (args) => promptTemplates.quick_start(args as { couple_id?: string })
+  );
 
   return server;
 }
